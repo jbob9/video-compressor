@@ -1,3 +1,3 @@
-module video-compressor
+module videocompressor
 
 go 1.22.5
