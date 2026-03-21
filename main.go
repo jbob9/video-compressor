@@ -6,27 +6,31 @@ import (
 	"flag"
 )
 
-// case "high":
-// 		crf = "28"
-// 		preset = "slow"
-// 	case "very_high":
-// 		crf = "30"
-// 		preset = "slower"
-// 	case "maximum":
-// 		crf = "32"
-// 		preset = "veryslow"
-// 	default: // normal
-// 		crf = "23"
-// 		preset = "medium"
-// go build -o videocompressor
-//  ./videocompressor -i input.mp4 -o output.mp4 -l high -t 4
-//    ./videocompressor -i input.mp4 -l very_high
-//    ./videocompressor -h
-//    ./videocompressor -l high -t 4 -c 2 -o /path/to/output/dir file1.mp4 file2.mp4 file3.mp4
-var useGUI bool
+// Package-level flags – registered once, parsed once.
+var (
+	useGUI       bool
+	flagOutput   string
+	flagLevel    string
+	flagCodec    string
+	flagRes      string
+	flagAudio    string
+	flagThreads  int
+	flagConc     int
+	flagHW       bool
+	flagHelp     bool
+)
 
 func init() {
-	flag.BoolVar(&useGUI, "gui", false, "Use GUI instead of CLI")
+	flag.BoolVar(&useGUI, "gui", false, "Launch the web GUI")
+	flag.StringVar(&flagOutput, "o", "", "Output directory (optional)")
+	flag.StringVar(&flagLevel, "l", "normal", "Compression level: normal, high, very_high, maximum")
+	flag.StringVar(&flagCodec, "codec", "h264", "Video codec: h264, h265")
+	flag.StringVar(&flagRes, "r", "original", "Resolution: original, 1080p, 720p, 480p")
+	flag.StringVar(&flagAudio, "ab", "128k", "Audio bitrate: 128k, 96k, 64k")
+	flag.IntVar(&flagThreads, "t", 0, "Threads per file (0 = auto-detect)")
+	flag.IntVar(&flagConc, "c", 1, "Max concurrent compressions")
+	flag.BoolVar(&flagHW, "hw", false, "Enable hardware acceleration")
+	flag.BoolVar(&flagHelp, "h", false, "Show help")
 }
 
 func main() {

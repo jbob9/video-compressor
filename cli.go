@@ -1,63 +1,94 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
-	"runtime"
 	"sync"
 )
 
+func printUsage() {
+	fmt.Println("Video Compressor — Fast video compression powered by FFmpeg")
+	fmt.Println()
+	fmt.Println("Usage:")
+	fmt.Println("  videocompressor [options] <file1> <file2> ...")
+	fmt.Println("  videocompressor -gui")
+	fmt.Println()
+	fmt.Println("Options:")
+	flag.PrintDefaults()
+	fmt.Println()
+	fmt.Println("Examples:")
+	fmt.Println("  videocompressor -l high video.mp4")
+	fmt.Println("  videocompressor -codec h265 -r 720p -o ./output/ video1.mp4 video2.mp4")
+	fmt.Println("  videocompressor -hw -l maximum -c 2 *.mp4")
+	fmt.Println("  videocompressor -gui")
+}
+
 func runCLI() {
-	outputDir := flag.String("o", "", "Output directory (optional)")
-	compressionLevel := flag.String("l", "normal", "Compression level: normal, high, very_high, maximum")
-	threads := flag.Int("t", runtime.NumCPU(), "Number of threads to use per file")
-	maxConcurrent := flag.Int("c", 1, "Maximum number of files to process concurrently")
-	help := flag.Bool("h", false, "Show help")
-
-	// Parse flags
-	flag.Parse()
-
-	// Show help if requested or if no input files are provided
-	if *help || flag.NArg() == 0 {
+	if flagHelp || flag.NArg() == 0 {
 		printUsage()
 		return
 	}
 
-	// Get input files from remaining arguments
 	inputFiles := flag.Args()
 
-	// Create output directory if specified
-	if *outputDir != "" {
-		err := os.MkdirAll(*outputDir, os.ModePerm)
-		if err != nil {
+	if flagOutput != "" {
+		if err := os.MkdirAll(flagOutput, os.ModePerm); err != nil {
 			fmt.Printf("Error creating output directory: %v\n", err)
 			return
 		}
 	}
 
-	// Use a wait group to wait for all goroutines to finish
+	// Hardware acceleration info
+	if flagHW {
+		info := DetectHWAccel()
+		switch {
+		case info.NVENC:
+			fmt.Println("✓ Hardware acceleration: NVENC (NVIDIA)")
+		case info.VAAPI:
+			fmt.Println("✓ Hardware acceleration: VAAPI")
+		case info.QSV:
+			fmt.Println("✓ Hardware acceleration: QSV (Intel)")
+		default:
+			fmt.Println("⚠ No hardware acceleration found — falling back to software encoding")
+			flagHW = false
+		}
+	}
+
+	fmt.Printf("Codec: %s | Level: %s | Resolution: %s\n\n", flagCodec, flagLevel, flagRes)
+
 	var wg sync.WaitGroup
-	// Use a semaphore to limit the number of concurrent compressions
-	semaphore := make(chan struct{}, *maxConcurrent)
+	sem := make(chan struct{}, flagConc)
 
-	for _, inputFile := range inputFiles {
+	for _, input := range inputFiles {
 		wg.Add(1)
-		go func(input string) {
+		go func(in string) {
 			defer wg.Done()
-			semaphore <- struct{}{} // Acquire semaphore
-			defer func() { <-semaphore }() // Release semaphore
+			sem <- struct{}{}
+			defer func() { <-sem }()
 
-			outputPath := GetOutputPath(input, *compressionLevel, *outputDir)
-			err := CompressVideo(input, outputPath, *compressionLevel, *threads)
-			if err != nil {
-				fmt.Printf("Error compressing %s: %v\n", input, err)
-			} else {
-				fmt.Printf("Successfully compressed %s to %s\n", input, outputPath)
+			outPath := GetOutputPath(in, flagLevel, flagOutput)
+			opts := CompressOptions{
+				InputPath:        in,
+				OutputPath:       outPath,
+				CompressionLevel: flagLevel,
+				Codec:            flagCodec,
+				Resolution:       flagRes,
+				Threads:          flagThreads,
+				HWAccel:          flagHW,
+				AudioBitrate:     flagAudio,
 			}
-		}(inputFile)
+
+			fmt.Printf("Compressing: %s\n", in)
+			if err := CompressVideoWithProgress(context.Background(), opts, nil); err != nil {
+				fmt.Printf("✕ Error compressing %s: %v\n", in, err)
+			} else {
+				fmt.Printf("✓ Compressed %s → %s\n", in, outPath)
+			}
+		}(input)
 	}
 
 	wg.Wait()
-	fmt.Println("All files processed.")
+	fmt.Println("\nAll files processed.")
 }
